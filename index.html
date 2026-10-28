@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>المجلس القضائي الأعلى - المنظومة الرسمية</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
@@ -364,13 +365,39 @@
   </div>
 
   <script>
-    let currentUser = JSON.parse(localStorage.getItem('judge_user') || sessionStorage.getItem('judge_user')) || null;
+    function readStoredUser() {
+      // Visitor access is session-only; authenticated users may remain signed in on this device.
+      try {
+        const sessionUser = JSON.parse(sessionStorage.getItem('judge_user') || 'null');
+        if (sessionUser && sessionUser.role === 'guest') return sessionUser;
+        const savedUser = JSON.parse(localStorage.getItem('judge_user') || 'null');
+        if (savedUser && savedUser.role !== 'guest') return savedUser;
+      } catch (e) {
+        console.warn('تعذر استعادة جلسة المستخدم:', e);
+      }
+      // Clean up old versions that accidentally persisted guest sessions.
+      try {
+        const oldUser = JSON.parse(localStorage.getItem('judge_user') || 'null');
+        if (oldUser && oldUser.role === 'guest') localStorage.removeItem('judge_user');
+      } catch (e) {}
+      return null;
+    }
+    let currentUser = readStoredUser();
     let cases = JSON.parse(localStorage.getItem('judge_cases')) || [];
     let wantedList = JSON.parse(localStorage.getItem('judge_wanted')) || [];
     let adminPass = localStorage.getItem('judge_admin_pass') || '1000';
-    let authorizedUsers = JSON.parse(localStorage.getItem('judge_auth')) || [
-      { name: 'أسامة الجهني', code: adminPass, role: 'admin', task: 'رئيس القضاة والمصمم' }
-    ];
+    let authorizedUsers = JSON.parse(localStorage.getItem('judge_auth')) || [];
+    // Ensure the رئيس القضاة account always exists, even when an older saved list is present.
+    if (!Array.isArray(authorizedUsers)) authorizedUsers = [];
+    let chiefJudge = authorizedUsers.find(u => u && u.role === 'admin');
+    if (!chiefJudge) {
+      authorizedUsers.unshift({ name: 'أسامة الجهني', code: adminPass, role: 'admin', task: 'رئيس القضاة والمصمم' });
+    } else {
+      if (!chiefJudge.name) chiefJudge.name = 'أسامة الجهني';
+      if (!chiefJudge.code) chiefJudge.code = adminPass;
+      if (!chiefJudge.task) chiefJudge.task = 'رئيس القضاة والمصمم';
+    }
+    localStorage.setItem('judge_auth', JSON.stringify(authorizedUsers));
     let accessLogs = JSON.parse(localStorage.getItem('judge_logs')) || [];
     let currentAnnouncement = localStorage.getItem('judge_announcement') || '';
     let chatMessages = JSON.parse(localStorage.getItem('judge_chat')) || [
@@ -414,10 +441,12 @@
 
     function enterAsGuest() {
       currentUser = { name: 'زائر تصفح', role: 'guest' };
-      localStorage.setItem('judge_user', JSON.stringify(currentUser));
+      // Keep guest access in this tab only, never in persistent localStorage.
+      localStorage.removeItem('judge_user');
       sessionStorage.setItem('judge_user', JSON.stringify(currentUser));
       logVisit('زائر', 'دخول تصفح حر');
       document.getElementById('welcomeOverlay').classList.add('hidden');
+      document.getElementById('authModal').classList.add('hidden');
       updateUserUI();
       renderAnnouncement();
       renderCases();
@@ -505,6 +534,7 @@
     }
 
     function saveAnnouncement() {
+      if (!currentUser || currentUser.role !== 'admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
       const text = document.getElementById('announcementInput').value.trim();
       currentAnnouncement = text;
       saveData();
@@ -513,6 +543,7 @@
     }
 
     function clearAnnouncement() {
+      if (!currentUser || currentUser.role !== 'admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
       if (confirm('هل تريد إزالة الإعلان الحالي؟')) {
         currentAnnouncement = '';
         saveData();
@@ -526,38 +557,44 @@
     }
 
     function handleLogin() {
-      const name = document.getElementById('loginUsername').value.trim();
-      const code = document.getElementById('loginCode').value.trim();
+      const nameInput = document.getElementById('loginUsername');
+      const codeInput = document.getElementById('loginCode');
+      const name = nameInput.value.trim();
+      const code = codeInput.value.trim();
 
-      if (!name || !code) return alert('يرجى إدخال اسم المستخدم والرمز السري');
-
-      let matchedUser = null;
-
-      if (String(code) === String(adminPass)) {
-        matchedUser = { name: name || 'أسامة الجهني', role: 'admin' };
-      } else {
-        const found = authorizedUsers.find(u => String(u.code) === String(code));
-        if (found) {
-          matchedUser = { name: name || found.name, role: found.role };
-        }
-      }
-
-      if (!matchedUser) {
-        alert('خطأ: الرمز السري غير صحيح أو غير مُصرح له في النظام!');
+      if (!name || !code) {
+        alert('يرجى إدخال اسم المستخدم والرمز السري');
         return;
       }
 
-      currentUser = matchedUser;
+      // Match BOTH the registered name and secret code. A code alone must not grant a role.
+      const normalizeName = value => String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ar');
+      const found = authorizedUsers.find(u =>
+        normalizeName(u.name) === normalizeName(name) &&
+        String(u.code) === String(code)
+      );
+
+      if (!found) {
+        alert('بيانات الدخول غير صحيحة. تأكد من الاسم والرمز السري.');
+        codeInput.value = '';
+        codeInput.focus();
+        return;
+      }
+
+      currentUser = { name: found.name, role: found.role };
+      sessionStorage.removeItem('judge_user');
       localStorage.setItem('judge_user', JSON.stringify(currentUser));
-      sessionStorage.setItem('judge_user', JSON.stringify(currentUser));
       logVisit(currentUser.name, 'دخول (' + currentUser.role + ')');
       updateUserUI();
       renderAnnouncement();
       closeModal('authModal');
+      document.getElementById('welcomeOverlay').classList.add('hidden');
       renderCases();
       renderWanted();
       renderAuthorized();
       renderChat();
+      nameInput.value = '';
+      codeInput.value = '';
     }
 
     function openAuthModal() {
@@ -572,7 +609,9 @@
         renderWanted();
         renderChat();
       } else {
+        // A guest can open the login window without losing the current browsing session.
         document.getElementById('authModal').classList.remove('hidden');
+        document.getElementById('loginUsername').focus();
       }
     }
 
@@ -581,6 +620,14 @@
     }
 
     function switchTab(tab) {
+      const role = currentUser && currentUser.role;
+      if ((tab === 'authorized' || tab === 'logs') && role !== 'admin') {
+        alert('هذه الصفحة مخصصة لرئيس القضاة فقط.');
+        tab = 'cases';
+      }
+      if (tab === 'chat' && (!role || role === 'guest')) {
+        // The chat tab can be opened to show its access-denied message.
+      }
       document.getElementById('section-cases').classList.add('hidden');
       document.getElementById('section-wanted').classList.add('hidden');
       document.getElementById('section-chat').classList.add('hidden');
@@ -664,6 +711,9 @@
     }
 
     function saveCase() {
+      if (!currentUser || !['admin', 'judge', 'clerk'].includes(currentUser.role)) {
+        return alert('سجّل الدخول بحساب مصرح قبل حفظ القضية.');
+      }
       const index = parseInt(document.getElementById('editCaseIndex').value);
       const title = document.getElementById('caseTitle').value;
       const plaintiff = document.getElementById('casePlaintiff').value;
@@ -884,11 +934,13 @@
     }
 
     function updateAdminPassword() {
+      if (!currentUser || currentUser.role !== 'admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
       const newPass = document.getElementById('newAdminPassword').value.trim();
       if (!newPass) return alert('يرجى إدخال الرمز الجديد');
       adminPass = newPass;
       localStorage.setItem('judge_admin_pass', adminPass);
-      authorizedUsers[0].code = adminPass;
+      const adminUser = authorizedUsers.find(u => u.role === 'admin');
+      if (adminUser) adminUser.code = adminPass;
       saveData();
       alert('تم تحديث كلمة المرور بنجاح!');
       document.getElementById('newAdminPassword').value = '';
@@ -896,6 +948,7 @@
     }
 
     function addAuthorizedUser() {
+      if (!currentUser || currentUser.role !== 'admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
       const name = document.getElementById('newAuthName').value.trim();
       const code = document.getElementById('newAuthCode').value.trim();
       const role = document.getElementById('newAuthRole').value;
@@ -910,6 +963,7 @@
     }
 
     function removeAuthUser(index) {
+      if (!currentUser || currentUser.role !== 'admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
       if (confirm('إزالة هذه الصلاحية؟')) {
         authorizedUsers.splice(index, 1);
         saveData();
@@ -948,6 +1002,7 @@
     }
 
     function clearLogs() {
+      if (!currentUser || currentUser.role !== 'admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
       if (confirm('مسح السجل؟')) {
         accessLogs = [];
         saveData();
@@ -956,6 +1011,238 @@
     }
 
     window.onload = init;
+  </script>
+  <script>
+/* Supabase adapter for the existing Arabic UI. Public/publishable key only. */
+(function () {
+  const SUPABASE_URL = 'https://imkqkwipdujytxtlkcbe.supabase.co';
+  const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_2Q3zKbqqJAQp-hKABC4BUg_v6Q-4QvS';
+  if (!window.supabase?.createClient) {
+    console.error('Supabase JS لم يتم تحميله.');
+    return;
+  }
+  const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  window.councilDb = db;
+  let profile = null;
+
+  const friendlyError = (e) => {
+    console.error(e);
+    alert('تعذرت العملية مع قاعدة البيانات. تأكد أنك شغّلت ملف supabase_schema.sql وأن صلاحيات الحساب صحيحة.');
+  };
+  async function refreshProfile() {
+    const { data: { user } } = await db.auth.getUser();
+    if (!user) { profile = null; currentUser = null; return; }
+    const { data, error } = await db.from('profiles').select('id,display_name,role').eq('id', user.id).single();
+    if (error || !data) { profile = null; currentUser = null; await db.auth.signOut(); throw error || new Error('لم يتم العثور على ملف المستخدم'); }
+    profile = data;
+    currentUser = { id: data.id, name: data.display_name, role: data.role, email: user.email };
+  }
+  async function loadRemoteData() {
+    const [caseRes, wantedRes, annRes, logRes] = await Promise.all([
+      db.from('cases').select('*').order('created_at', {ascending:false}),
+      currentUser && currentUser.role !== 'guest' ? db.from('wanted_items').select('*').order('created_at', {ascending:false}) : Promise.resolve({data:[],error:null}),
+      db.from('announcements').select('*').eq('is_active', true).order('created_at',{ascending:false}).limit(1),
+      currentUser?.role === 'admin' ? db.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(100) : Promise.resolve({data:[],error:null})
+    ]);
+    if (caseRes.error) throw caseRes.error;
+    if (wantedRes.error) throw wantedRes.error;
+    if (annRes.error) throw annRes.error;
+    if (logRes.error && currentUser?.role === 'admin') throw logRes.error;
+    cases = (caseRes.data || []).map(c => ({...c, fileData:'', fileName:'', visibility:c.visibility || 'private'}));
+    wantedList = wantedRes.data || [];
+    currentAnnouncement = annRes.data?.[0]?.body || '';
+    accessLogs = (logRes.data || []).map(l => ({name:l.actor_id || 'مستخدم', status:l.action, time:new Date(l.created_at).toLocaleString('ar-SA')}));
+    // Never use browser-local fake staff accounts for authentication.
+    authorizedUsers = profile ? [{name:profile.display_name, role:profile.role, task:roleTitle(profile.role)}] : [];
+  }
+  function roleTitle(role) { return ({admin:'رئيس القضاة',judge:'قاضٍ / محقق',clerk:'كاتب عدل'})[role] || 'زائر'; }
+  async function audit(action, targetType, targetId) {
+    if (!currentUser?.id || currentUser.role === 'guest') return;
+    const { error } = await db.from('audit_logs').insert({actor_id:currentUser.id, action, target_type:targetType || null, target_id:targetId == null ? null : String(targetId)});
+    if (error) console.warn('تعذر تسجيل العملية', error);
+  }
+  window.init = async function () {
+    try {
+      const {data:{session}} = await db.auth.getSession();
+      if (session) await refreshProfile();
+      else currentUser = null;
+      if (!currentUser) {
+        const guest = JSON.parse(sessionStorage.getItem('judge_user') || 'null');
+        currentUser = guest?.role === 'guest' ? guest : null;
+      }
+      await loadRemoteData();
+      document.getElementById('welcomeOverlay').classList.toggle('hidden', !!currentUser);
+      updateUserUI(); renderAnnouncement(); renderCases(); renderWanted(); renderAuthorized(); renderLogs(); renderChat();
+    } catch (e) { friendlyError(e); }
+  };
+  window.handleLogin = async function () {
+    const email = document.getElementById('loginUsername').value.trim();
+    const password = document.getElementById('loginCode').value;
+    if (!email || !password) return alert('أدخل البريد الإلكتروني وكلمة المرور.');
+    const {error} = await db.auth.signInWithPassword({email, password});
+    if (error) return alert('تعذر تسجيل الدخول. تأكد من البريد وكلمة المرور وأن الحساب أُنشئ في Supabase.');
+    try {
+      await refreshProfile(); await loadRemoteData();
+      sessionStorage.removeItem('judge_user'); localStorage.removeItem('judge_user');
+      await audit('تسجيل دخول','auth',currentUser.id);
+      updateUserUI(); renderAnnouncement(); renderCases(); renderWanted(); renderAuthorized(); renderLogs(); renderChat();
+      closeModal('authModal'); document.getElementById('welcomeOverlay').classList.add('hidden');
+      document.getElementById('loginUsername').value=''; document.getElementById('loginCode').value='';
+    } catch(e) { friendlyError(e); }
+  };
+  window.openAuthModal = async function () {
+    if (currentUser && currentUser.role !== 'guest') {
+      await audit('تسجيل خروج','auth',currentUser.id); await db.auth.signOut(); profile=null; currentUser=null;
+      localStorage.removeItem('judge_user'); sessionStorage.removeItem('judge_user');
+      await loadRemoteData(); document.getElementById('welcomeOverlay').classList.remove('hidden');
+      updateUserUI(); renderCases(); renderWanted(); renderChat();
+    } else { document.getElementById('authModal').classList.remove('hidden'); document.getElementById('loginUsername').focus(); }
+  };
+  // Visitor sessions are local to this tab only. All data they see is fetched from Supabase.
+  window.enterAsGuest = async function () {
+    currentUser = {name:'زائر تصفح', role:'guest'}; sessionStorage.setItem('judge_user', JSON.stringify(currentUser)); localStorage.removeItem('judge_user');
+    try { await loadRemoteData(); } catch(e) { friendlyError(e); }
+    document.getElementById('welcomeOverlay').classList.add('hidden'); document.getElementById('authModal').classList.add('hidden');
+    updateUserUI(); renderAnnouncement(); renderCases(); renderWanted(); renderChat();
+  };
+  window.saveCase = async function () {
+    if (!['admin','judge','clerk'].includes(currentUser?.role)) return alert('سجّل الدخول بحساب مصرح قبل حفظ القضية.');
+    const index = Number.parseInt(document.getElementById('editCaseIndex').value,10);
+    const old = index >= 0 ? cases[index] : null;
+    const row = {
+      title: document.getElementById('caseTitle').value.trim(),
+      plaintiff: document.getElementById('casePlaintiff').value.trim() || null,
+      defendant: document.getElementById('caseDefendant').value.trim() || null,
+      status: document.getElementById('caseStatus').value,
+      visibility: document.getElementById('caseVisibility').value,
+      details: document.getElementById('caseDetails').value.trim() || null,
+      updated_by: currentUser.id
+    };
+    if (!row.title) return alert('يرجى تعبئة عنوان القضية');
+    if (old) {
+      const {error} = await db.from('cases').update(row).eq('id',old.id);
+      if (error) return friendlyError(error);
+      await audit('تعديل قضية','case',old.id);
+    } else {
+      row.created_by = currentUser.id;
+      const {data,error} = await db.from('cases').insert(row).select().single();
+      if (error) return friendlyError(error);
+      await audit('إضافة قضية','case',data.id);
+    }
+    await loadRemoteData(); closeModal('caseModal'); renderCases();
+    alert('تم حفظ القضية في قاعدة البيانات المشتركة.');
+  };
+  window.renderCases = function() {
+    const list=document.getElementById('casesList');
+    const search=(document.getElementById('searchInput').value||'').toLocaleLowerCase('ar');
+    const statusFilter=document.getElementById('statusFilter').value;
+    const isVisitor=!currentUser || currentUser.role==='guest';
+    const filtered=cases.filter(c=>{
+      if(isVisitor && c.visibility!=='public') return false;
+      const hay=(String(c.title||'')+' '+String(c.plaintiff||'')).toLocaleLowerCase('ar');
+      if(!hay.includes(search)) return false;
+      if(statusFilter!=='all' && c.status!==statusFilter) return false;
+      return true;
+    });
+    if(!filtered.length){list.innerHTML='<div class="col-span-full text-center py-12 text-gray-500">لا توجد قضايا متاحة للعرض حالياً.</div>';return;}
+    list.innerHTML=filtered.map(c=>{
+      const i=cases.indexOf(c), status=escapeHtml(c.status||'قيد النظر');
+      const color=c.status==='مكتملة (تم الحكم)'?'bg-emerald-500/20 text-emerald-400 border-emerald-500/30':c.status==='معلقة'?'bg-red-500/20 text-red-400 border-red-500/30':'bg-amber-500/20 text-amber-400 border-amber-500/30';
+      const admin=currentUser?.role==='admin', canEdit=['admin','judge'].includes(currentUser?.role);
+      const visibility=admin?`<button onclick="toggleVisibility(${i})" class="text-xs px-2 py-0.5 rounded font-bold border ${c.visibility==='private'?'bg-red-500/10 text-red-400 border-red-500/30':'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}">${c.visibility==='private'?'مخفية عن الزوار':'متاحة للزوار'}</button>`:'';
+      return `<div class="bg-navy-800 border border-gray-800 rounded-xl p-4 space-y-3 relative shadow hover:border-amber-500/50 transition"><div class="flex justify-between items-start flex-wrap gap-2"><div class="flex items-center gap-2"><span class="text-xs border px-2 py-0.5 rounded font-bold ${color}">${status}</span>${visibility}</div><div class="flex items-center gap-2"><button onclick="viewCaseDetails(${i})" class="text-blue-400 text-xs font-bold bg-blue-500/10 px-2 py-1 rounded border border-blue-500/20">عرض القضية</button>${canEdit?`<button onclick="editCase(${i})" class="text-amber-400 text-xs">تعديل</button>`:''}${admin?`<button onclick="deleteCase(${i})" class="text-red-400 text-xs">حذف</button>`:''}</div></div><h4 class="font-bold text-gray-100 text-base">${escapeHtml(c.title)}</h4><div class="text-xs space-y-1 text-gray-400"><p><strong class="text-gray-300">المدعي:</strong> ${escapeHtml(c.plaintiff||'-')}</p><p><strong class="text-gray-300">المدعى عليه:</strong> ${escapeHtml(c.defendant||'-')}</p></div></div>`;
+    }).join('');
+  };
+  window.renderWanted = function() {
+    const list=document.getElementById('wantedList'); list.innerHTML='';
+    if(!currentUser || currentUser.role==='guest') { list.innerHTML='<div class="col-span-full text-center py-12 text-gray-500">قائمة المتابعة مخصصة للمستخدمين المصرح لهم.</div>'; return; }
+    if(!wantedList.length) { list.innerHTML='<div class="col-span-full text-center py-12 text-gray-500">لا توجد عناصر في قائمة المتابعة.</div>'; return; }
+    list.innerHTML=wantedList.map((w,i)=>`<div class="bg-navy-800 border border-red-500/20 rounded-xl p-4 space-y-3 relative"><div class="flex justify-between items-start"><span class="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded font-bold">${escapeHtml(w.status||'')}</span>${currentUser.role==='admin'?`<button onclick="deleteWanted(${i})" class="text-red-400 text-xs">حذف</button>`:''}</div><h4 class="font-bold text-gray-100 text-base">${escapeHtml(w.name||'')}</h4><p class="text-xs text-gray-400"><strong class="text-gray-300">السبب:</strong> ${escapeHtml(w.reason||'-')}</p></div>`).join('');
+  };
+  window.toggleVisibility = async function(index) {
+    if (currentUser?.role !== 'admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
+    const c=cases[index]; if(!c) return;
+    const visibility=c.visibility==='private'?'public':'private';
+    const {error}=await db.from('cases').update({visibility,updated_by:currentUser.id}).eq('id',c.id);
+    if(error) return friendlyError(error);
+    await audit(visibility==='public'?'نشر قضية للعامة':'إخفاء قضية','case',c.id); await loadRemoteData(); renderCases();
+  };
+  window.deleteCase = async function(index) {
+    if(currentUser?.role!=='admin') return alert('حذف القضايا مخصص لرئيس القضاة.');
+    const c=cases[index]; if(!c || !confirm('حذف هذه القضية نهائياً؟')) return;
+    const {error}=await db.from('cases').delete().eq('id',c.id); if(error) return friendlyError(error);
+    await audit('حذف قضية','case',c.id); await loadRemoteData(); renderCases();
+  };
+  window.saveAnnouncement = async function() {
+    if(currentUser?.role!=='admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
+    const body=document.getElementById('announcementInput').value.trim();
+    if(!body) return alert('اكتب نص الإعلان أولاً.');
+    const {error:offError}=await db.from('announcements').update({is_active:false}).eq('is_active',true);
+    if(offError) return friendlyError(offError);
+    const {error}=await db.from('announcements').insert({body,is_active:true,created_by:currentUser.id});
+    if(error) return friendlyError(error);
+    currentAnnouncement=body; renderAnnouncement(); await audit('نشر إعلان','announcement'); alert('تم نشر الإعلان لجميع الزوار.');
+  };
+  window.clearAnnouncement = async function() {
+    if(currentUser?.role!=='admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
+    if(!confirm('هل تريد إزالة الإعلان الحالي من جميع الأجهزة؟')) return;
+    const {error}=await db.from('announcements').update({is_active:false}).eq('is_active',true);
+    if(error) return friendlyError(error); currentAnnouncement=''; renderAnnouncement(); await audit('إزالة الإعلان','announcement');
+  };
+  window.saveWanted = async function() {
+    if(!['admin','judge'].includes(currentUser?.role)) return alert('إضافة طلبات المتابعة مخصصة لرئيس القضاة والقاضي.');
+    const name=document.getElementById('wantedName').value.trim();
+    const reason=document.getElementById('wantedReason').value.trim();
+    const status=document.getElementById('wantedStatus').value;
+    if(!name) return alert('يرجى إدخال الاسم.');
+    const {error}=await db.from('wanted_items').insert({name,reason,status,visibility:'private',created_by:currentUser.id});
+    if(error) return friendlyError(error); await audit('إضافة طلب متابعة','wanted');
+    document.getElementById('wantedName').value=''; document.getElementById('wantedReason').value=''; closeModal('wantedModal');
+    await loadRemoteData(); renderWanted();
+  };
+  window.deleteWanted = async function(index) {
+    if(currentUser?.role!=='admin') return alert('حذف العناصر مخصص لرئيس القضاة.');
+    const w=wantedList[index]; if(!w || !confirm('حذف هذا العنصر؟')) return;
+    const {error}=await db.from('wanted_items').delete().eq('id',w.id); if(error) return friendlyError(error);
+    await loadRemoteData(); renderWanted();
+  };
+  window.addAuthorizedUser = function() {
+    if(currentUser?.role!=='admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
+    alert('لأمان الحسابات، أنشئ المستخدم من Supabase Dashboard > Authentication > Users، ثم عيّن دوره من SQL Editor. لا تحفظ كلمات المرور في الموقع.');
+  };
+  window.removeAuthUser = function() { alert('إدارة المستخدمين تتم من Supabase Dashboard حتى لا يتم حذف حسابات بطريقة غير آمنة.'); };
+  window.updateAdminPassword = function() { alert('غيّر كلمة المرور من Supabase Authentication، وليس من هذه الصفحة.'); };
+  window.sendChatMessage = function() { alert('ميزة المحادثة لم تُربط بقاعدة البيانات بعد؛ تم تعطيل الحفظ المحلي حتى لا تظهر رسائل وهمية على أجهزة مختلفة.'); };
+  window.clearLogs = async function() {
+    if(currentUser?.role!=='admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
+    if(!confirm('مسح سجل العمليات؟')) return;
+    const {error}=await db.from('audit_logs').delete().neq('id',0); if(error) return friendlyError(error);
+    accessLogs=[]; renderLogs();
+  };
+  window.renderAuthorized = async function() {
+    const list=document.getElementById('authorizedList');
+    if(currentUser?.role!=='admin') { list.innerHTML='<p class="text-xs text-gray-400">إدارة الحسابات لرئيس القضاة فقط.</p>'; return; }
+    const {data,error}=await db.from('profiles').select('id,display_name,role,created_at').order('created_at',{ascending:true});
+    if(error) { list.textContent='تعذر تحميل الحسابات.'; return; }
+    list.innerHTML='<h4 class="font-bold text-xs text-gray-400 mb-2">الحسابات المسجلة:</h4>'+(data||[]).map(u=>`<div class="flex justify-between items-center text-xs p-2.5 bg-navy-900 rounded border border-gray-800"><span><strong>${escapeHtml(u.display_name)}</strong> — ${escapeHtml(roleTitle(u.role))}</span></div>`).join('');
+  };
+  function escapeHtml(value) { return String(value??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  // Prevent old local browser data from masquerading as shared database records.
+  localStorage.removeItem('judge_cases'); localStorage.removeItem('judge_wanted'); localStorage.removeItem('judge_auth');
+  localStorage.removeItem('judge_announcement'); localStorage.removeItem('judge_logs'); localStorage.removeItem('judge_chat');
+  document.getElementById('loginUsername').type='email';
+  document.getElementById('loginUsername').placeholder='البريد الإلكتروني المسجل';
+  const labels=document.querySelectorAll('#authModal label'); if(labels[0]) labels[0].textContent='البريد الإلكتروني';
+  if(labels[1]) labels[1].textContent='كلمة المرور';
+  document.getElementById('loginCode').placeholder='كلمة مرور حساب Supabase';
+  const fileInput = document.getElementById('caseFileInput');
+  if (fileInput) { fileInput.disabled = true; fileInput.title = 'رفع المرفقات لم يتم ربطه بالتخزين الآمن بعد'; }
+  const fileLabel = fileInput?.parentElement;
+  if (fileLabel) { const note=document.createElement('p'); note.className='text-xs text-amber-300 mt-2'; note.textContent='رفع المرفقات غير متاح مؤقتًا حتى إعداد التخزين الخاص والصلاحيات؛ لا ترفع أدلة أو مستندات هنا.'; fileLabel.appendChild(note); }
+  chatMessages = [];
+  window.onload = window.init;
+})();
+
   </script>
 </body>
 </html>
