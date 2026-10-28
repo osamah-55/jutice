@@ -403,56 +403,77 @@
     let currentUser = null;
     let cases = [], wantedList = [], announcements = [], visitors = [];
 
-    function loadLocalData() {
-      try {
-        const localCases = localStorage.getItem('local_cases');
-        if(localCases) cases = JSON.parse(localCases);
-        renderCases();
-      } catch(e) {}
-    }
+    // ==================== [ الاستماع اللحظي الفوري لـ Firebase Real-time ] ====================
+    function initRealtimeListeners() {
+      // 1. مراقبة حالة إغلاق الموقع الطارئة للجميع
+      db.collection('settings').doc('siteStatus').onSnapshot(doc => {
+        const data = doc.data();
+        const overlay = document.getElementById('emergencyOverlay');
+        const msgDisp = document.getElementById('emergencyMessageDisplay');
+        const adminCtrl = document.getElementById('emergencyAdminControl');
 
-    db.collection('settings').doc('siteStatus').onSnapshot(doc => {
-      const data = doc.data();
-      const overlay = document.getElementById('emergencyOverlay');
-      const msgDisp = document.getElementById('emergencyMessageDisplay');
-      const adminCtrl = document.getElementById('emergencyAdminControl');
-
-      if (data && data.isLocked) {
-        overlay.classList.remove('hidden');
-        msgDisp.innerText = data.reason || 'الموقع مغلق حالياً بأمر الإدارة العليا.';
-        if (currentUser && currentUser.role === 'admin') {
-          adminCtrl.classList.remove('hidden');
+        if (data && data.isLocked) {
+          overlay.classList.remove('hidden');
+          msgDisp.innerText = data.reason || 'الموقع مغلق حالياً بأمر الإدارة العليا.';
+          if (currentUser && currentUser.role === 'admin') {
+            adminCtrl.classList.remove('hidden');
+          } else {
+            adminCtrl.classList.add('hidden');
+          }
         } else {
-          adminCtrl.classList.add('hidden');
+          overlay.classList.add('hidden');
         }
-      } else {
-        overlay.classList.add('hidden');
-      }
-    });
-
-    db.collection('communicationChat').orderBy('createdAt', 'asc').onSnapshot(snapshot => {
-      const chatContainer = document.getElementById('chatMessagesContainer');
-      if(!chatContainer) return;
-      if(snapshot.empty) {
-        chatContainer.innerHTML = '<div class="text-center py-12 text-gray-500 text-xs">لا توجد رسائل في شات الرتب حالياً.</div>';
-        return;
-      }
-      let html = '';
-      snapshot.forEach(doc => {
-        const m = doc.data();
-        html += `
-          <div class="bg-royal-dark border border-gray-800 p-3.5 rounded-xl space-y-1 shadow">
-            <div class="flex justify-between items-center">
-              <span class="font-bold text-amber-400 text-xs">${m.sender}</span>
-              <span class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30 font-bold">${m.role || 'رتبة معتمدة'}</span>
-            </div>
-            <p class="text-xs text-gray-200 leading-relaxed pt-1">${m.content}</p>
-          </div>
-        `;
       });
-      chatContainer.innerHTML = html;
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    });
+
+      // 2. مراقبة القضايا لحظياً لكل متصفحي الموقع
+      db.collection('cases').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+        cases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderCases();
+      });
+
+      // 3. مراقبة سجل المطلوبين لحظياً
+      db.collection('wanted').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+        wantedList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderWanted();
+      });
+
+      // 4. مراقبة التعميمات الرسمية لحظياً
+      db.collection('announcements').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+        announcements = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderAnnouncements();
+      });
+
+      // 5. مراقبة سجلات الزائرين لحظياً
+      db.collection('visitors').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+        visitors = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderVisitors();
+      });
+
+      // 6. شرفة التواصل الشات اللحظي
+      db.collection('communicationChat').orderBy('createdAt', 'asc').onSnapshot(snapshot => {
+        const chatContainer = document.getElementById('chatMessagesContainer');
+        if(!chatContainer) return;
+        if(snapshot.empty) {
+          chatContainer.innerHTML = '<div class="text-center py-12 text-gray-500 text-xs">لا توجد رسائل في شات الرتب حالياً.</div>';
+          return;
+        }
+        let html = '';
+        snapshot.forEach(doc => {
+          const m = doc.data();
+          html += `
+            <div class="bg-royal-dark border border-gray-800 p-3.5 rounded-xl space-y-1 shadow">
+              <div class="flex justify-between items-center">
+                <span class="font-bold text-amber-400 text-xs">${m.sender}</span>
+                <span class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30 font-bold">${m.role || 'رتبة معتمدة'}</span>
+              </div>
+              <p class="text-xs text-gray-200 leading-relaxed pt-1">${m.content}</p>
+            </div>
+          `;
+        });
+        chatContainer.innerHTML = html;
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      });
+    }
 
     function switchTab(tab) {
       ['cases', 'wanted', 'announcements', 'visitors', 'communication'].forEach(t => {
@@ -475,7 +496,6 @@
     function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
-    // فتح مودال إضافة قضية جديدة
     function openNewCaseModal() {
       document.getElementById('editCaseId').value = '';
       document.getElementById('caseModalTitle').innerHTML = '<i class="fa-solid fa-gavel"></i> إدراج قضية جديدة';
@@ -488,7 +508,6 @@
       openModal('caseModal');
     }
 
-    // فتح مودال إضافة مطلوب جديد
     function openNewWantedModal() {
       document.getElementById('editWantedId').value = '';
       document.getElementById('wantedModalTitle').innerHTML = '<i class="fa-solid fa-user-plus"></i> إضافة شخص مطلوب';
@@ -499,7 +518,6 @@
       openModal('wantedModal');
     }
 
-    // فتح مودال إضافة تعميم جديد
     function openNewAnnouncementModal() {
       document.getElementById('editAnnId').value = '';
       document.getElementById('annModalTitle').innerHTML = '<i class="fa-solid fa-bullhorn"></i> إصدار تعميم جديد';
@@ -627,29 +645,6 @@
       renderVisitors();
     }
 
-    async function loadData() {
-      try {
-        const cSnap = await db.collection('cases').get();
-        cases = cSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        localStorage.setItem('local_cases', JSON.stringify(cases));
-        renderCases();
-
-        const wSnap = await db.collection('wanted').get();
-        wantedList = wSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        renderWanted();
-
-        const aSnap = await db.collection('announcements').get();
-        announcements = aSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        renderAnnouncements();
-
-        const vSnap = await db.collection('visitors').get();
-        visitors = vSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        renderVisitors();
-      } catch(e) {
-        loadLocalData();
-      }
-    }
-
     window.handleLogin = async function() {
       const username = document.getElementById('loginUsername').value.trim().toLowerCase();
       const password = document.getElementById('loginCode').value;
@@ -659,7 +654,6 @@
         currentUser = { name: 'أسامة الجهني', role: 'admin', roleTitle: 'رئيس القضاة والمصمم' };
         updateUserUI();
         closeModal('authModal');
-        loadData();
         alert('تم تسجيل الدخول بنجاح برتبة: رئيس القضاة والمصمم');
         return;
       }
@@ -674,7 +668,6 @@
         currentUser = { name: username, role: 'judge', roleTitle: roleTitle };
         updateUserUI();
         closeModal('authModal');
-        loadData();
         alert('تم تسجيل الدخول بنجاح برتبة: ' + currentUser.roleTitle);
       } catch(e) {
         currentUser = { name: username, role: 'judge', roleTitle: 'رتبة معتمدة' };
@@ -689,7 +682,6 @@
         auth.signOut();
         currentUser = null;
         updateUserUI();
-        loadData();
         alert('تم تسجيل الخروج.');
       } else {
         openModal('authModal');
@@ -701,7 +693,6 @@
       const welcome = document.getElementById('welcomeOverlay');
       if(welcome) welcome.classList.add('hidden');
       updateUserUI();
-      loadData();
     };
 
     window.openAuthModalFromWelcome = function() {
@@ -710,7 +701,7 @@
       openModal('authModal');
     };
 
-    // ==================== [ إدارة القضايا: حفظ، تعديل، حذف ] ====================
+    // ==================== [ إدارة القضايا المباشرة المربوطة بـ Firebase ] ====================
     window.saveCase = async function() {
       if(!currentUser || currentUser.role === 'guest') return alert('يجب تسجيل الدخول أولاً لإدراج قضية.');
       
@@ -725,37 +716,25 @@
       if(!title) return alert('الرجاء إدخال عنوان القضية على الأقل.');
 
       const saveBtn = document.getElementById('saveCaseBtn');
-      if(saveBtn) { saveBtn.innerText = 'جاري الحفظ...'; saveBtn.disabled = true; }
+      if(saveBtn) { saveBtn.innerText = 'جاري الحفظ والاعتماد...'; saveBtn.disabled = true; }
 
       try {
         if(editId) {
-          // تعديل قضية موجودة
-          const index = cases.findIndex(c => c.id === editId);
-          if(index !== -1) {
-            cases[index] = { ...cases[index], title, plaintiff, defendant, details, visibility, fileName: fileNameInput };
-          }
-          localStorage.setItem('local_cases', JSON.stringify(cases));
-          renderCases();
-          closeModal('caseModal');
-          alert('تم تعديل وتحديث القضية بنجاح!');
-          try { await db.collection('cases').doc(editId).update({ title, plaintiff, defendant, details, visibility, fileName: fileNameInput }); } catch(e){}
+          await db.collection('cases').doc(editId).update({
+            title, plaintiff, defendant, details, visibility, fileName: fileNameInput
+          });
+          alert('تم تعديل القضيّة وتحديثها عند جميع المستخدمين!');
         } else {
-          // إضافة قضية جديدة
-          const newCaseObj = {
-            id: 'case_' + Date.now(),
+          await db.collection('cases').add({
             title, plaintiff, defendant, details, visibility,
             fileName: fileNameInput || '',
             createdAt: Date.now()
-          };
-          cases.unshift(newCaseObj);
-          localStorage.setItem('local_cases', JSON.stringify(cases));
-          renderCases();
-          closeModal('caseModal');
-          alert('تم إصدار القضية ونشرها بنجاح!');
-          try { await db.collection('cases').doc(newCaseObj.id).set(newCaseObj); } catch(e){}
+          });
+          alert('تم إصدار القضية ونشرها لحظياً عند الجميع!');
         }
+        closeModal('caseModal');
       } catch(e) {
-        alert('حدث خطأ: ' + e.message);
+        alert('حدث خطأ أثناء الحفظ: ' + e.message);
       } finally {
         if(saveBtn) { saveBtn.innerText = 'حفظ واعتماد القضية'; saveBtn.disabled = false; }
       }
@@ -777,15 +756,14 @@
     };
 
     window.deleteCase = async function(id) {
-      if(!confirm('هل أنت متكد من رغبتك في حذف هذه القضية نهائياً؟')) return;
-      cases = cases.filter(c => c.id !== id);
-      localStorage.setItem('local_cases', JSON.stringify(cases));
-      renderCases();
-      alert('تم حذف القضية بنجاح.');
-      try { await db.collection('cases').doc(id).delete(); } catch(e){}
+      if(!confirm('هل أنت متأكد من رغبتك في حذف هذه القضية نهائياً؟')) return;
+      try {
+        await db.collection('cases').doc(id).delete();
+        alert('تم حذف القضية بنجاح عند الجميع.');
+      } catch(e){ alert('خطأ في الحذف: ' + e.message); }
     };
 
-    // ==================== [ إدارة المطلوبين: إضافة، تعديل، حذف ] ====================
+    // ==================== [ إدارة المطلوبين المباشرة ] ====================
     window.saveWanted = async function() {
       if(!currentUser || currentUser.role === 'guest') return alert('سجل الدخول أولاً.');
       const editId = document.getElementById('editWantedId').value;
@@ -797,23 +775,16 @@
 
       if(!name) return alert('أدخل اسم المطلوب.');
 
-      if(editId) {
-        const index = wantedList.findIndex(w => w.id === editId);
-        if(index !== -1) {
-          wantedList[index] = { ...wantedList[index], name, degree, reason, details, visibility };
+      try {
+        if(editId) {
+          await db.collection('wanted').doc(editId).update({ name, degree, reason, details, visibility });
+          alert('تم تعديل بيانات المطلوب!');
+        } else {
+          await db.collection('wanted').add({ name, degree, reason, details, visibility, createdAt: Date.now() });
+          alert('تمت إضافة المطلوب بنجاح ونشره فوراً!');
         }
-        renderWanted();
         closeModal('wantedModal');
-        alert('تم تعديل سجل المطلوب بنجاح!');
-        try { await db.collection('wanted').doc(editId).update({ name, degree, reason, details, visibility }); } catch(e){}
-      } else {
-        const newW = { id: 'wanted_' + Date.now(), name, degree, reason, details, visibility, createdAt: Date.now() };
-        wantedList.unshift(newW);
-        renderWanted();
-        closeModal('wantedModal');
-        alert('تمت إضافة الشخص المطلوب بنجاح!');
-        try { await db.collection('wanted').doc(newW.id).set(newW); } catch(e){}
-      }
+      } catch(e) { alert('خطأ: ' + e.message); }
     };
 
     window.editWanted = function(id) {
@@ -832,13 +803,13 @@
 
     window.deleteWanted = async function(id) {
       if(!confirm('هل أنت متأكد من حذف اسم المطلوب من السجل الأمني؟')) return;
-      wantedList = wantedList.filter(w => w.id !== id);
-      renderWanted();
-      alert('تم حذف المطلوب بنجاح.');
-      try { await db.collection('wanted').doc(id).delete(); } catch(e){}
+      try {
+        await db.collection('wanted').doc(id).delete();
+        alert('تم حذف المطلوب من السجل.');
+      } catch(e){ alert('خطأ: ' + e.message); }
     };
 
-    // ==================== [ إدارة التعميمات: إضافة، تعديل، حذف ] ====================
+    // ==================== [ إدارة التعميمات المباشرة ] ====================
     window.saveAnnouncement = async function() {
       if(!currentUser || currentUser.role === 'guest') return alert('سجل الدخول أولاً.');
       const editId = document.getElementById('editAnnId').value;
@@ -847,23 +818,16 @@
 
       if(!title) return alert('أدخل عنوان التعميم.');
 
-      if(editId) {
-        const index = announcements.findIndex(a => a.id === editId);
-        if(index !== -1) {
-          announcements[index] = { ...announcements[index], title, content };
+      try {
+        if(editId) {
+          await db.collection('announcements').doc(editId).update({ title, content });
+          alert('تم تعديل التعميم!');
+        } else {
+          await db.collection('announcements').add({ title, content, author: currentUser.name, createdAt: Date.now() });
+          alert('تم نشر التعميم فوراً عند الجميع!');
         }
-        renderAnnouncements();
         closeModal('announcementModal');
-        alert('تم تعديل التعميم بنجاح!');
-        try { await db.collection('announcements').doc(editId).update({ title, content }); } catch(e){}
-      } else {
-        const newA = { id: 'ann_' + Date.now(), title, content, author: currentUser.name, createdAt: Date.now() };
-        announcements.unshift(newA);
-        renderAnnouncements();
-        closeModal('announcementModal');
-        alert('تم نشر التعميم بنجاح!');
-        try { await db.collection('announcements').doc(newA.id).set(newA); } catch(e){}
-      }
+      } catch(e) { alert('خطأ: ' + e.message); }
     };
 
     window.editAnnouncement = function(id) {
@@ -879,13 +843,13 @@
 
     window.deleteAnnouncement = async function(id) {
       if(!confirm('هل أنت متأكد من حذف هذا التعميم؟')) return;
-      announcements = announcements.filter(a => a.id !== id);
-      renderAnnouncements();
-      alert('تم حذف التعميم بنجاح.');
-      try { await db.collection('announcements').doc(id).delete(); } catch(e){}
+      try {
+        await db.collection('announcements').doc(id).delete();
+        alert('تم حذف التعميم.');
+      } catch(e){ alert('خطأ: ' + e.message); }
     };
 
-    // ==================== [ إدارة الزائرين: إضافة، تعديل، حذف ] ====================
+    // ==================== [ إدارة الزائرين المباشرة ] ====================
     window.saveVisitor = async function() {
       const editId = document.getElementById('editVisId').value;
       const name = document.getElementById('visitorName').value.trim();
@@ -894,23 +858,16 @@
 
       if(!name || !code) return alert('أدخل اسم الزائر والرمز التعريفي.');
 
-      if(editId) {
-        const index = visitors.findIndex(v => v.id === editId);
-        if(index !== -1) {
-          visitors[index] = { ...visitors[index], name, code, reason };
+      try {
+        if(editId) {
+          await db.collection('visitors').doc(editId).update({ name, code, reason });
+          alert('تم تعديل سجل الزائر!');
+        } else {
+          await db.collection('visitors').add({ name, code, reason, createdAt: Date.now() });
+          alert('تم تسجيل الزائر بنجاح!');
         }
-        renderVisitors();
         closeModal('visitorModal');
-        alert('تم تعديل سجل الزائر بنجاح!');
-        try { await db.collection('visitors').doc(editId).update({ name, code, reason }); } catch(e){}
-      } else {
-        const newV = { id: 'vis_' + Date.now(), name, code, reason, createdAt: Date.now() };
-        visitors.unshift(newV);
-        renderVisitors();
-        closeModal('visitorModal');
-        alert('تم تسجيل الزائر بنجاح!');
-        try { await db.collection('visitors').doc(newV.id).set(newV); } catch(e){}
-      }
+      } catch(e) { alert('خطأ: ' + e.message); }
     };
 
     window.editVisitor = function(id) {
@@ -927,10 +884,10 @@
 
     window.deleteVisitor = async function(id) {
       if(!confirm('هل تريد حذف سجل هذا الزائر نهائياً؟')) return;
-      visitors = visitors.filter(v => v.id !== id);
-      renderVisitors();
-      alert('تم حذف سجل الزائر بنجاح.');
-      try { await db.collection('visitors').doc(id).delete(); } catch(e){}
+      try {
+        await db.collection('visitors').doc(id).delete();
+        alert('تم حذف سجل الزائر.');
+      } catch(e){ alert('خطأ: ' + e.message); }
     };
 
     window.sendChatMessage = async function() {
@@ -939,14 +896,18 @@
       const content = input.value.trim();
       if(!content) return;
 
-      const newMsg = { sender: currentUser.name, role: currentUser.roleTitle, content: content, createdAt: Date.now() };
       try {
-        await db.collection('communicationChat').add(newMsg);
+        await db.collection('communicationChat').add({
+          sender: currentUser.name,
+          role: currentUser.roleTitle,
+          content: content,
+          createdAt: Date.now()
+        });
         input.value = '';
       } catch(e) { alert('خطأ: ' + e.message); }
     };
 
-    // ==================== [ العرض والتصيير (Render) مع أزرار التعديل والحذف ] ====================
+    // ==================== [ العرض والتصيير (Render) ] ====================
     window.renderCases = function() {
       const list = document.getElementById('casesList');
       if(!list) return;
@@ -978,7 +939,6 @@
         let badgeText = c.visibility === 'public' ? 'عام (للجميع)' : (c.visibility === 'osamahOnly' ? 'خاص برئيس القضاة فقط' : 'خاص بالرتب');
         let badgeColor = c.visibility === 'public' ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20';
 
-        // أزرار التعديل والحذف تظهر فقط للمستخدمين المسجلين (غير الزائر)
         let actionButtons = '';
         if(currentUser && currentUser.role !== 'guest') {
           actionButtons = `
@@ -1127,8 +1087,7 @@
     window.onload = function() {
       const welcome = document.getElementById('welcomeOverlay');
       if(welcome) welcome.classList.remove('hidden');
-      loadData();
-      loadLocalData();
+      initRealtimeListeners();
     };
   </script>
 </body>
