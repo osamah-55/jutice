@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>المجلس القضائي الأعلى - المنظومة الرسمية</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Firebase SDKs (CDN) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
@@ -68,19 +72,6 @@
     </div>
   </header>
 
-  <!-- Global Announcement Banner -->
-  <div id="announcementBanner" class="bg-gradient-to-r from-amber-600 to-amber-700 text-white px-6 py-3 shadow-inner hidden">
-    <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
-      <div class="flex items-center gap-3 text-sm font-bold">
-        <span class="bg-black/30 px-3 py-1 rounded-full text-xs flex items-center gap-1"><i class="fa-solid fa-bullhorn text-amber-300"></i> إعلان هام</span>
-        <span id="announcementText" class="text-amber-50"></span>
-      </div>
-      <div id="adminAnnouncementControls" class="hidden items-center gap-2">
-        <button onclick="openAnnouncementModal()" class="text-xs bg-black/40 hover:bg-black/60 px-3 py-1 rounded font-bold"><i class="fa-solid fa-pen"></i> تعديل الإعلان</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Navigation Bar -->
   <nav class="bg-navy-900 border-b border-gray-800 px-6 py-2">
     <div class="max-w-7xl mx-auto flex gap-2 overflow-x-auto text-sm">
@@ -89,15 +80,6 @@
       </button>
       <button onclick="switchTab('wanted')" id="tab-wanted" class="px-4 py-2 rounded-lg font-bold text-gray-400 hover:text-white hover:bg-navy-800 flex items-center gap-2">
         <i class="fa-solid fa-triangle-exclamation text-red-500"></i> سجل المطلوبين
-      </button>
-      <button onclick="switchTab('chat')" id="tab-chat" class="px-4 py-2 rounded-lg font-bold text-gray-400 hover:text-white hover:bg-navy-800 flex items-center gap-2">
-        <i class="fa-solid fa-comments text-blue-400"></i> شرفة التواصل (للرتب)
-      </button>
-      <button id="authorizedTabBtn" onclick="switchTab('authorized')" class="hidden px-4 py-2 rounded-lg font-bold text-gray-400 hover:text-white hover:bg-navy-800 items-center gap-2">
-        <i class="fa-solid fa-user-gear text-emerald-400"></i> الصلاحيات والإعلانات
-      </button>
-      <button id="logsTabBtn" onclick="switchTab('logs')" class="hidden px-4 py-2 rounded-lg font-bold text-gray-400 hover:text-white hover:bg-navy-800 items-center gap-2">
-        <i class="fa-solid fa-eye text-purple-400"></i> سجل الزوار والنشاط
       </button>
     </div>
   </nav>
@@ -113,12 +95,6 @@
             <i class="fa-solid fa-magnifying-glass absolute right-3 top-3.5 text-gray-400"></i>
             <input type="text" id="searchInput" oninput="renderCases()" placeholder="بحث باسم القضية، المشتكي..." class="w-full bg-navy-900 border border-gray-700 rounded-lg pr-10 pl-4 py-2 text-sm focus:outline-none focus:border-amber-500">
           </div>
-          <select id="statusFilter" onchange="renderCases()" class="bg-navy-900 border border-gray-700 text-xs rounded-lg px-3 py-2 text-gray-300">
-            <option value="all">جميع الحالات</option>
-            <option value="قيد النظر">قيد النظر</option>
-            <option value="مكتملة (تم الحكم)">مكتملة (تم الحكم)</option>
-            <option value="معلقة">معلقة</option>
-          </select>
         </div>
         
         <button id="addCaseBtnMain" onclick="openNewCaseModal()" class="hidden bg-amber-600 hover:bg-amber-700 text-white px-5 py-2 rounded-lg font-bold text-sm items-center gap-2 shadow">
@@ -142,92 +118,7 @@
       </div>
       <div id="wantedList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
     </section>
-
-    <!-- Tab 3: Chat Room -->
-    <section id="section-chat" class="hidden space-y-4">
-      <div class="bg-navy-800 p-4 rounded-xl border border-blue-500/30 flex justify-between items-center">
-        <div>
-          <h2 class="text-lg font-bold text-blue-400 flex items-center gap-2"><i class="fa-solid fa-comments"></i> شرفة التنسيق والمحادثات القضائية</h2>
-          <p class="text-xs text-gray-400">قناة محادثة خاصة برئيس القضاة وأعضاء السلك القضائي فقط.</p>
-        </div>
-        <span class="text-xs bg-blue-500/20 text-blue-300 border border-blue-500/30 px-3 py-1 rounded-full font-bold"><i class="fa-solid fa-lock"></i> محجوبة عن الزوار</span>
-      </div>
-
-      <div id="chatAuthorizedBox" class="bg-navy-800 rounded-xl border border-gray-800 flex flex-col h-[550px]">
-        <div id="chatMessages" class="flex-1 p-4 overflow-y-auto space-y-3"></div>
-        <div class="p-3 bg-navy-900 border-t border-gray-800 flex gap-2">
-          <input type="text" id="chatInput" placeholder="اكتب رسالتك أو توجيهك القضائي..." class="flex-1 bg-navy-800 border border-gray-700 rounded-lg px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500" onkeypress="if(event.key==='Enter') sendChatMessage()">
-          <button onclick="sendChatMessage()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 shadow">
-            <span>إرسال</span> <i class="fa-solid fa-paper-plane"></i>
-          </button>
-        </div>
-      </div>
-
-      <div id="chatVisitorBlocked" class="hidden bg-navy-800 rounded-xl border border-red-500/30 p-12 text-center space-y-4">
-        <div class="w-16 h-16 bg-red-500/10 text-red-400 rounded-full flex items-center justify-center mx-auto text-2xl border border-red-500/20">
-          <i class="fa-solid fa-user-lock"></i>
-        </div>
-        <h3 class="text-xl font-bold text-red-400">عذراً! هذه الشرفة مخصصة لأعضاء الرتب والمصرح لهم فقط</h3>
-        <p class="text-sm text-gray-400 max-w-md mx-auto">حسابك الحالي لا يمتلك صلاحية الاطلاع على المحادثات الداخلية.</p>
-      </div>
-    </section>
-
-    <!-- Tab 4: Authorized Users & Announcements -->
-    <section id="section-authorized" class="hidden space-y-6">
-      <div class="bg-navy-800 p-4 rounded-xl border border-amber-500/30">
-        <h2 class="text-lg font-bold text-amber-400 mb-1">لوحة التحكم السريعة لرئيس القضاة</h2>
-        <p class="text-xs text-gray-400">إدارة الإعلانات، كلمات المرور، وحسابات القضاة والكتاب.</p>
-      </div>
-
-      <div class="bg-navy-800 p-6 rounded-xl border border-amber-500/30 max-w-xl mx-auto space-y-4">
-        <h3 class="font-bold text-amber-300 flex items-center gap-2"><i class="fa-solid fa-bullhorn"></i> نشر أو تعديل الإعلان العام للزوار</h3>
-        <div>
-          <label class="text-xs text-gray-400">نص الإعلان الرسمي</label>
-          <textarea id="announcementInput" rows="3" class="w-full bg-navy-900 border border-gray-700 rounded p-2.5 text-sm mt-1 focus:border-amber-500" placeholder="اكتب نص الإعلان الذى سيظهر للجميع في أعلى الموقع..."></textarea>
-        </div>
-        <div class="flex gap-2">
-          <button onclick="saveAnnouncement()" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded text-sm shadow">نشر وتحديث الإعلان</button>
-          <button onclick="clearAnnouncement()" class="bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-4 py-2 rounded text-sm font-bold border border-red-500/30">إزالة الإعلان</button>
-        </div>
-      </div>
-
-      <div id="authorizedList" class="bg-navy-800 p-4 rounded-xl border border-gray-800 space-y-2 max-w-xl mx-auto"></div>
-    </section>
-
-    <!-- Tab 5: Logs -->
-    <section id="section-logs" class="hidden space-y-6">
-      <div class="bg-navy-800 p-4 rounded-xl border border-purple-500/30 flex justify-between items-center">
-        <div>
-          <h2 class="text-lg font-bold text-purple-400">سجل الزوار ودخول المستخدمين</h2>
-          <p class="text-xs text-gray-400">رصد فوري لكل من زار الموقع أو سجل دخوله.</p>
-        </div>
-        <button onclick="clearLogs()" class="text-xs text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i> مسح السجل</button>
-      </div>
-      <div id="logsList" class="bg-navy-800 p-4 rounded-xl border border-gray-800 space-y-2 max-h-[60vh] overflow-y-auto text-xs"></div>
-    </section>
-
   </main>
-
-  <!-- Modals -->
-
-  <!-- View Case Modal -->
-  <div id="viewCaseModal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-    <div class="bg-navy-800 border border-amber-500/50 w-full max-w-2xl rounded-2xl p-6 space-y-4 relative max-h-[90vh] overflow-y-auto">
-      <button onclick="closeModal('viewCaseModal')" class="absolute left-4 top-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
-      <div class="flex items-center gap-2 border-b border-gray-700 pb-3">
-        <span id="viewCaseStatus" class="text-xs border px-2 py-0.5 rounded font-bold"></span>
-        <h3 id="viewCaseTitle" class="text-xl font-bold text-amber-400"></h3>
-      </div>
-      <div class="grid grid-cols-2 gap-4 text-sm bg-navy-900 p-3 rounded-lg border border-gray-800">
-        <p><strong class="text-gray-400 block text-xs">المدعي / المشتكي:</strong> <span id="viewCasePlaintiff" class="text-gray-100 font-bold"></span></p>
-        <p><strong class="text-gray-400 block text-xs">المدعى عليه:</strong> <span id="viewCaseDefendant" class="text-gray-100 font-bold"></span></p>
-      </div>
-      <div>
-        <strong class="text-gray-300 text-sm block mb-1">تفاصيل وحيثيات القضية:</strong>
-        <div id="viewCaseDetails" class="text-sm text-gray-300 bg-navy-900 p-4 rounded-lg border border-gray-800 leading-relaxed whitespace-pre-line"></div>
-      </div>
-    </div>
-  </div>
 
   <!-- Auth Modal -->
   <div id="authModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
@@ -236,32 +127,28 @@
       <h3 class="text-lg font-bold text-amber-400 text-center">تسجيل الدخول للمنظومة القضائية</h3>
       <div>
         <label class="text-xs text-gray-300">اسم المستخدم</label>
-        <input type="text" id="loginUsername" placeholder="اسم المستخدم" class="w-full bg-navy-900 border border-gray-700 rounded-lg p-2.5 text-sm mt-1 focus:border-amber-500">
+        <input type="text" id="loginUsername" placeholder="مثال: osamah" class="w-full bg-navy-900 border border-gray-700 rounded-lg p-2.5 text-sm mt-1 focus:border-amber-500">
       </div>
       <div>
         <label class="text-xs text-gray-300">كلمة المرور</label>
-        <input type="password" id="loginCode" placeholder="كلمة المرور المخصصة لك" class="w-full bg-navy-900 border border-gray-700 rounded-lg p-2.5 text-sm mt-1 focus:border-amber-500">
+        <input type="password" id="loginCode" placeholder="كلمة المرور" class="w-full bg-navy-900 border border-gray-700 rounded-lg p-2.5 text-sm mt-1 focus:border-amber-500">
       </div>
       <button onclick="handleLogin()" class="w-full bg-gold text-white font-bold py-2.5 rounded-lg">دخول</button>
     </div>
   </div>
 
-  <!-- New / Edit Case Modal -->
+  <!-- New Case Modal -->
   <div id="caseModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-    <div class="bg-navy-800 border border-gray-700 w-full max-w-lg rounded-xl p-6 space-y-4 relative max-h-[90vh] overflow-y-auto">
+    <div class="bg-navy-800 border border-gray-700 w-full max-w-lg rounded-xl p-6 space-y-4 relative">
       <button onclick="closeModal('caseModal')" class="absolute left-4 top-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-      <h3 id="caseModalTitle" class="text-lg font-bold text-amber-400">إضافة قضية جديدة</h3>
-      
-      <input type="hidden" id="editCaseIndex" value="-1">
-
+      <h3 class="text-lg font-bold text-amber-400">إضافة قضية جديدة</h3>
       <div>
         <label class="text-xs text-gray-300">عنوان القضية</label>
         <input type="text" id="caseTitle" class="w-full bg-navy-900 border border-gray-700 rounded p-2 text-sm mt-1">
       </div>
-      
       <div class="grid grid-cols-2 gap-2">
         <div>
-          <label class="text-xs text-gray-300">المشتكي / المدعي</label>
+          <label class="text-xs text-gray-300">المشتكي</label>
           <input type="text" id="casePlaintiff" class="w-full bg-navy-900 border border-gray-700 rounded p-2 text-sm mt-1">
         </div>
         <div>
@@ -269,267 +156,107 @@
           <input type="text" id="caseDefendant" class="w-full bg-navy-900 border border-gray-700 rounded p-2 text-sm mt-1">
         </div>
       </div>
-
-      <div class="grid grid-cols-2 gap-2">
-        <div>
-          <label class="text-xs text-gray-300">حالة القضية</label>
-          <select id="caseStatus" class="w-full bg-navy-900 border border-gray-700 rounded p-2 text-sm mt-1">
-            <option value="قيد النظر">قيد النظر</option>
-            <option value="مكتملة (تم الحكم)">مكتملة (تم الحكم)</option>
-            <option value="معلقة">معلقة</option>
-          </select>
-        </div>
-        <div>
-          <label class="text-xs text-gray-300">من يحق له مشاهدة القضية؟</label>
-          <select id="caseVisibleRoles" multiple size="4" class="w-full bg-navy-900 border border-gray-700 rounded p-2 text-sm mt-1">
-            <option value="guest">الزائر</option><option value="clerk">كاتب العدل</option><option value="judge">القاضي</option><option value="admin">رئيس القضاة</option>
-          </select>
-        </div>
-      </div>
-
       <div>
-        <label class="text-xs text-gray-300">تفاصيل الحيثيات والقرارات</label>
+        <label class="text-xs text-gray-300">التفاصيل</label>
         <textarea id="caseDetails" rows="3" class="w-full bg-navy-900 border border-gray-700 rounded p-2 text-sm mt-1"></textarea>
       </div>
-
-      <button onclick="saveCase()" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded">حفظ وتحديث البيانات</button>
+      <button onclick="saveCase()" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded">حفظ القضية</button>
     </div>
   </div>
 
-  <!-- New Wanted Modal -->
-  <div id="wantedModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-    <div class="bg-navy-800 border border-red-500/40 w-full max-w-lg rounded-xl p-6 space-y-4 relative">
-      <button onclick="closeModal('wantedModal')" class="absolute left-4 top-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-      <h3 class="text-lg font-bold text-red-400">إضافة شخص مطلوب جديد</h3>
-      <div>
-        <label class="text-xs text-gray-300">اسم المطلوب الكامل</label>
-        <input type="text" id="wantedName" class="w-full bg-navy-900 border border-gray-700 rounded p-2 text-sm mt-1" placeholder="اسم الشخص...">
-      </div>
-      <div>
-        <label class="text-xs text-gray-300">التهمة أو سبب الطلب</label>
-        <input type="text" id="wantedReason" class="w-full bg-navy-900 border border-gray-700 rounded p-2 text-sm mt-1" placeholder="مثال: التخلف عن الحضور...">
-      </div>
-      <div>
-        <label class="text-xs text-gray-300">حالة الطلب</label>
-        <select id="wantedStatus" class="w-full bg-navy-900 border border-gray-700 rounded p-2 text-sm mt-1">
-          <option value="مطلوب فوراً">مطلوب فوراً</option>
-          <option value="تعميم قضائي">تعميم قضائي</option>
-          <option value="قيد التحري">قيد التحري</option>
-        </select>
-      </div>
-      <button onclick="saveWanted()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded">إدراج في قائمة المطلوبين</button>
-    </div>
-  </div>
-
+  <!-- Firebase Integration Script -->
   <script>
-    // Global variable declarations
+    // إعدادات Firebase الخاصة بك
+    const firebaseConfig = {
+      apiKey: "AIzaSyDiylnPZ8D6ov4yBWSJT4f45rWwQJekugE",
+      authDomain: "almajlis-court.firebaseapp.com",
+      projectId: "almajlis-court",
+      storageBucket: "almajlis-court.firebasestorage.app",
+      messagingSenderId: "4651006729",
+      appId: "1:4651006729:web:2212070130cace10ddf1d8",
+      measurementId: "G-B1B80T211H"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
+
     let currentUser = null;
     let cases = [];
-    let wantedList = [];
-    let accessLogs = [];
-    let currentAnnouncement = '';
-    let chatMessages = [];
 
     function switchTab(tab) {
-      const role = currentUser && currentUser.role;
-      if ((tab === 'authorized' || tab === 'logs') && role !== 'admin') {
-        alert('هذه الصفحة مخصصة لرئيس القضاة فقط.');
-        tab = 'cases';
-      }
       document.getElementById('section-cases').classList.add('hidden');
       document.getElementById('section-wanted').classList.add('hidden');
-      document.getElementById('section-chat').classList.add('hidden');
-      document.getElementById('section-authorized').classList.add('hidden');
-      document.getElementById('section-logs').classList.add('hidden');
       document.getElementById(`section-${tab}`).classList.remove('hidden');
     }
 
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-    function openNewCaseModal() {
-      document.getElementById('caseModalTitle').innerText = 'إضافة قضية جديدة';
-      document.getElementById('editCaseIndex').value = '-1';
-      document.getElementById('caseTitle').value = '';
-      document.getElementById('casePlaintiff').value = '';
-      document.getElementById('caseDefendant').value = '';
-      document.getElementById('caseStatus').value = 'قيد النظر';
-      [...document.getElementById('caseVisibleRoles').options].forEach(o=>o.selected=true);
-      document.getElementById('caseDetails').value = '';
-      document.getElementById('caseModal').classList.remove('hidden');
-    }
-    function openNewWantedModal() { document.getElementById('wantedModal').classList.remove('hidden'); }
-    function openAnnouncementModal() { switchTab('authorized'); document.getElementById('announcementInput').focus(); }
+    function openNewCaseModal() { document.getElementById('caseModal').classList.remove('hidden'); }
 
     function updateUserUI() {
       const badge = document.getElementById('userBadge');
       const nameDisp = document.getElementById('userNameDisplay');
       const roleDisp = document.getElementById('userRoleBadge');
       const authBtnText = document.getElementById('authBtnText');
-      const authTab = document.getElementById('authorizedTabBtn');
-      const logsTab = document.getElementById('logsTabBtn');
       const addCaseBtn = document.getElementById('addCaseBtnMain');
-      const addWantedBtn = document.getElementById('addWantedBtnMain');
-      const adminAnnounceCtrl = document.getElementById('adminAnnouncementControls');
 
       if (!currentUser || currentUser.role === 'guest') {
         badge.classList.add('hidden');
         authBtnText.innerText = 'تسجيل الدخول';
-        authTab.classList.add('hidden');
-        logsTab.classList.add('hidden');
         if(addCaseBtn) addCaseBtn.style.display = 'none';
-        if(addWantedBtn) addWantedBtn.style.display = 'none';
-        if(adminAnnounceCtrl) adminAnnounceCtrl.classList.add('hidden');
       } else {
         badge.classList.remove('hidden');
         badge.classList.add('flex');
-        nameDisp.innerText = currentUser.name || currentUser.username;
+        nameDisp.innerText = currentUser.name;
+        roleDisp.innerText = currentUser.role === 'admin' ? 'رئيس القضاة' : 'عضو';
         authBtnText.innerText = 'خروج';
-
-        if (currentUser.role === 'admin') {
-          roleDisp.innerText = 'رئيس القضاة';
-          authTab.classList.remove('hidden');
-          authTab.classList.add('flex');
-          logsTab.classList.remove('hidden');
-          logsTab.classList.add('flex');
-          if(addCaseBtn) addCaseBtn.style.display = 'flex';
-          if(addWantedBtn) addWantedBtn.style.display = 'flex';
-          if(adminAnnounceCtrl) adminAnnounceCtrl.classList.remove('hidden');
-        } else if (currentUser.role === 'judge') {
-          roleDisp.innerText = 'قاضٍ / محقق';
-          authTab.classList.add('hidden');
-          logsTab.classList.add('hidden');
-          if(addCaseBtn) addCaseBtn.style.display = 'flex';
-          if(addWantedBtn) addWantedBtn.style.display = 'flex';
-          if(adminAnnounceCtrl) adminAnnounceCtrl.classList.add('hidden');
-        } else if (currentUser.role === 'clerk') {
-          roleDisp.innerText = 'كاتب عدل';
-          authTab.classList.add('hidden');
-          logsTab.classList.add('hidden');
-          if(addCaseBtn) addCaseBtn.style.display = 'flex';
-          if(addWantedBtn) addWantedBtn.style.display = 'none';
-          if(adminAnnounceCtrl) adminAnnounceCtrl.classList.add('hidden');
-        }
+        if(addCaseBtn) addCaseBtn.style.display = 'flex';
       }
     }
 
-    function renderAnnouncement() {
-      const banner = document.getElementById('announcementBanner');
-      const text = document.getElementById('announcementText');
-      const input = document.getElementById('announcementInput');
-
-      if (currentAnnouncement && currentAnnouncement.trim() !== '') {
-        text.innerText = currentAnnouncement;
-        banner.classList.remove('hidden');
-        if (input) input.value = currentAnnouncement;
-      } else {
-        banner.classList.add('hidden');
-        if (input) input.value = '';
-      }
-    }
-
-    function escapeHtml(value) { return String(value??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  </script>
-
-  <!-- Supabase Integration Script -->
-  <script>
-  (function () {
-    const SUPABASE_URL = 'https://imkqkwipdujytxtlkcbe.supabase.co';
-    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_2Q3zKbqqJAQp-hKABC4BUg_v6Q-4QvS';
-
-    if (!window.supabase?.createClient) {
-      console.error('Supabase JS لم يتم تحميله.');
-      return;
-    }
-
-    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-    window.councilDb = db;
-    let profile = null;
-
-    const friendlyError = (e) => {
-      console.error(e);
-      alert('تعذرت العملية مع قاعدة البيانات. تأكد من صحة الصلاحيات أو إعدادات الشبكة.');
-    };
-
-    async function refreshProfile() {
-      const { data: { user } } = await db.auth.getUser();
-      if (!user) { profile = null; currentUser = null; return; }
-      const { data, error } = await db.from('profiles').select('id,display_name,username,role,is_disabled').eq('id', user.id).single();
-      if (error || !data || data.is_disabled) { profile = null; currentUser = null; await db.auth.signOut(); throw error || new Error('لم يتم العثور على ملف المستخدم'); }
-      profile = data;
-      currentUser = { id: data.id, name: data.display_name, username: data.username, role: data.role };
-    }
-
-    async function loadRemoteData() {
-      const [caseRes, wantedRes, annRes, logRes] = await Promise.all([
-        db.from('cases').select('*').order('created_at', {ascending:false}),
-        currentUser && currentUser.role !== 'guest' ? db.from('wanted_items').select('*').order('created_at', {ascending:false}) : Promise.resolve({data:[],error:null}),
-        db.from('announcements').select('*').eq('is_active', true).order('created_at',{ascending:false}).limit(1),
-        currentUser?.role === 'admin' ? db.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(100) : Promise.resolve({data:[],error:null})
-      ]);
-      if (caseRes.error) throw caseRes.error;
-      cases = (caseRes.data || []).map(c => ({...c, visibility:c.visibility || 'private'}));
-      wantedList = wantedRes.data || [];
-      currentAnnouncement = annRes.data?.[0]?.body || '';
-      accessLogs = (logRes.data || []).map(l => ({name:l.actor_id || 'مستخدم', status:l.action, time:new Date(l.created_at).toLocaleString('ar-SA')}));
-    }
-
-    async function audit(action, targetType, targetId) {
-      if (!currentUser?.id || currentUser.role === 'guest') return;
-      await db.from('audit_logs').insert({actor_id:currentUser.id, action, target_type:targetType || null, target_id:targetId == null ? null : String(targetId)});
-    }
-
-    window.init = async function () {
+    async function loadData() {
       try {
-        const {data:{session}} = await db.auth.getSession();
-        if (session) await refreshProfile();
-        else currentUser = null;
-
-        if (!currentUser) {
-          const guest = JSON.parse(sessionStorage.getItem('judge_user') || 'null');
-          currentUser = guest?.role === 'guest' ? guest : null;
-        }
-
-        await loadRemoteData();
-        document.getElementById('welcomeOverlay').classList.toggle('hidden', !!currentUser);
-        updateUserUI(); renderAnnouncement(); renderCases(); renderWanted(); renderLogs(); renderChat();
-      } catch (e) { friendlyError(e); }
-    };
-
-    async function usernameAlias(username) {
-      const bytes = new TextEncoder().encode(username.trim().normalize('NFKC').toLocaleLowerCase('en-US'));
-      const hash = await crypto.subtle.digest('SHA-256', bytes);
-      const hex = [...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('');
-      return `u-${hex}@login.council.invalid`;
+        const snapshot = await db.collection('cases').orderBy('createdAt', 'desc').get();
+        cases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderCases();
+      } catch(e) { console.error(e); }
     }
 
-    window.handleLogin = async function () {
-      const username = document.getElementById('loginUsername').value.trim().normalize('NFKC');
+    window.handleLogin = async function() {
+      const username = document.getElementById('loginUsername').value.trim().toLowerCase();
       const password = document.getElementById('loginCode').value;
-      if (!username || !password) return alert('أدخل اسم المستخدم وكلمة المرور.');
-      const email = await usernameAlias(username);
-      const {error} = await db.auth.signInWithPassword({email, password});
-      if (error) return alert('تعذر الدخول. تأكد من اسم المستخدم وكلمة المرور.');
+      if(!username || !password) return alert('أدخل اسم المستخدم وكلمة المرور.');
+
+      // تحويل اسم المستخدم إلى إيميل تلقائي في الخلفية ليتوافق مع نظام فايربيس
+      const email = `${username}@council.local`;
       try {
-        await refreshProfile(); await loadRemoteData();
-        await audit('تسجيل دخول','auth',currentUser.id);
-        updateUserUI(); renderAnnouncement(); renderCases(); renderWanted(); renderLogs(); renderChat();
-        closeModal('authModal'); document.getElementById('welcomeOverlay').classList.add('hidden');
-      } catch(e) { friendlyError(e); }
+        await auth.signInWithEmailAndPassword(email, password);
+        currentUser = { name: username, role: username === 'osamah' ? 'admin' : 'judge' };
+        updateUserUI();
+        closeModal('authModal');
+        loadData();
+        alert('تم تسجيل الدخول بنجاح!');
+      } catch(e) {
+        alert('فشل الدخول. تأكد من البيانات أو أن الحساب تم إنشاؤه.');
+      }
     };
 
-    window.openAuthModal = async function () {
+    window.openAuthModal = function() {
       if (currentUser && currentUser.role !== 'guest') {
-        await audit('تسجيل خروج','auth',currentUser.id); await db.auth.signOut(); profile=null; currentUser=null;
-        sessionStorage.removeItem('judge_user');
-        await loadRemoteData(); document.getElementById('welcomeOverlay').classList.remove('hidden');
-        updateUserUI(); renderCases(); renderWanted(); renderChat();
-      } else { document.getElementById('authModal').classList.remove('hidden'); document.getElementById('loginUsername').focus(); }
+        auth.signOut();
+        currentUser = null;
+        updateUserUI();
+        renderCases();
+      } else {
+        document.getElementById('authModal').classList.remove('hidden');
+      }
     };
 
-    window.enterAsGuest = async function () {
-      currentUser = {name:'زائر تصفح', role:'guest'}; sessionStorage.setItem('judge_user', JSON.stringify(currentUser));
-      try { await loadRemoteData(); } catch(e) { friendlyError(e); }
-      document.getElementById('welcomeOverlay').classList.add('hidden'); document.getElementById('authModal').classList.add('hidden');
-      updateUserUI(); renderAnnouncement(); renderCases(); renderWanted(); renderChat();
+    window.enterAsGuest = function() {
+      currentUser = { name: 'زائر', role: 'guest' };
+      document.getElementById('welcomeOverlay').classList.add('hidden');
+      updateUserUI();
+      loadData();
     };
 
     window.openAuthModalFromWelcome = function() {
@@ -537,160 +264,45 @@
       document.getElementById('authModal').classList.remove('hidden');
     };
 
-    window.saveCase = async function () {
-      if (!['admin','judge','clerk'].includes(currentUser?.role)) return alert('سجّل الدخول بحساب مصرح قبل حفظ القضية.');
-      const index = Number.parseInt(document.getElementById('editCaseIndex').value,10);
-      const old = index >= 0 ? cases[index] : null;
-      const visible_roles = [...document.getElementById('caseVisibleRoles').selectedOptions].map(o=>o.value);
-      const row = {
-        title: document.getElementById('caseTitle').value.trim(),
-        plaintiff: document.getElementById('casePlaintiff').value.trim() || null,
-        defendant: document.getElementById('caseDefendant').value.trim() || null,
-        status: document.getElementById('caseStatus').value,
-        visibility: visible_roles.includes('guest') ? 'public' : 'private',
-        visible_roles,
-        details: document.getElementById('caseDetails').value.trim() || null,
-        updated_by: currentUser.id
-      };
-      if (!row.title) return alert('يرجى تعبئة عنوان القضية');
-      if (old) {
-        const {error} = await db.from('cases').update(row).eq('id',old.id);
-        if (error) return friendlyError(error);
-        await audit('تعديل قضية','case',old.id);
-      } else {
-        row.created_by = currentUser.id;
-        const {data,error} = await db.from('cases').insert(row).select().single();
-        if (error) return friendlyError(error);
-        await audit('إضافة قضية','case',data.id);
-      }
-      await loadRemoteData(); closeModal('caseModal'); renderCases();
-      alert('تم حفظ القضية في قاعدة البيانات المشتركة بنجاح.');
+    window.saveCase = async function() {
+      if(!currentUser || currentUser.role === 'guest') return alert('سجل الدخول أولاً');
+      const title = document.getElementById('caseTitle').value.trim();
+      const plaintiff = document.getElementById('casePlaintiff').value.trim();
+      const defendant = document.getElementById('caseDefendant').value.trim();
+      const details = document.getElementById('caseDetails').value.trim();
+
+      if(!title) return alert('أدخل عنوان القضية');
+
+      try {
+        await db.collection('cases').add({
+          title, plaintiff, defendant, details,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        closeModal('caseModal');
+        loadData();
+        alert('تم حفظ القضية في فايربيس بنجاح!');
+      } catch(e) { alert('خطأ في الحفظ: ' + e.message); }
     };
 
     window.renderCases = function() {
-      const list=document.getElementById('casesList');
-      const search=(document.getElementById('searchInput').value||'').toLocaleLowerCase('ar');
-      const statusFilter=document.getElementById('statusFilter').value;
-      const isVisitor=!currentUser || currentUser.role==='guest';
-      const filtered=cases.filter(c=>{
-        const roles=c.visible_roles || (c.visibility==='public'?['admin','judge','clerk','guest']:['admin','judge','clerk']);
-        if(!roles.includes(isVisitor?'guest':currentUser.role)) return false;
-        const hay=(String(c.title||'')+' '+String(c.plaintiff||'')).toLocaleLowerCase('ar');
-        if(!hay.includes(search)) return false;
-        if(statusFilter!=='all' && c.status!==statusFilter) return false;
-        return true;
-      });
-      if(!filtered.length){list.innerHTML='<div class="col-span-full text-center py-12 text-gray-500">لا توجد قضايا متاحة للعرض حالياً.</div>';return;}
-      list.innerHTML=filtered.map(c=>{
-        const i=cases.indexOf(c), status=escapeHtml(c.status||'قيد النظر');
-        const color=c.status==='مكتملة (تم الحكم)'?'bg-emerald-500/20 text-emerald-400 border-emerald-500/30':c.status==='معلقة'?'bg-red-500/20 text-red-400 border-red-500/30':'bg-amber-500/20 text-amber-400 border-amber-500/30';
-        const admin=currentUser?.role==='admin', canEdit=['admin','judge'].includes(currentUser?.role);
-        return `<div class="bg-navy-800 border border-gray-800 rounded-xl p-4 space-y-3 relative shadow hover:border-amber-500/50 transition"><div class="flex justify-between items-start flex-wrap gap-2"><div class="flex items-center gap-2"><span class="text-xs border px-2 py-0.5 rounded font-bold ${color}">${status}</span></div><div class="flex items-center gap-2"><button onclick="viewCaseDetails(${i})" class="text-blue-400 text-xs font-bold bg-blue-500/10 px-2 py-1 rounded border border-blue-500/20">عرض القضية</button>${canEdit?`<button onclick="editCase(${i})" class="text-amber-400 text-xs">تعديل</button>`:''}${admin?`<button onclick="deleteCase(${i})" class="text-red-400 text-xs">حذف</button>`:''}</div></div><h4 class="font-bold text-gray-100 text-base">${escapeHtml(c.title)}</h4><div class="text-xs space-y-1 text-gray-400"><p><strong class="text-gray-300">المدعي:</strong> ${escapeHtml(c.plaintiff||'-')}</p><p><strong class="text-gray-300">المدعى عليه:</strong> ${escapeHtml(c.defendant||'-')}</p></div></div>`;
-      }).join('');
+      const list = document.getElementById('casesList');
+      if(!cases.length) { list.innerHTML = '<div class="col-span-full text-center py-12 text-gray-500">لا توجد قضايا مسجلة.</div>'; return; }
+      list.innerHTML = cases.map(c => `
+        <div class="bg-navy-800 border border-gray-800 rounded-xl p-4 space-y-3 shadow">
+          <h4 class="font-bold text-gray-100 text-base">${c.title}</h4>
+          <div class="text-xs space-y-1 text-gray-400">
+            <p><strong class="text-gray-300">المدعي:</strong> ${c.plaintiff || '-'}</p>
+            <p><strong class="text-gray-300">المدعى عليه:</strong> ${c.defendant || '-'}</p>
+            <p class="text-gray-300 mt-2">${c.details || ''}</p>
+          </div>
+        </div>
+      `).join('');
     };
 
-    window.viewCaseDetails = function(index) {
-      const c = cases[index];
-      document.getElementById('viewCaseTitle').innerText = c.title;
-      document.getElementById('viewCasePlaintiff').innerText = c.plaintiff || '-';
-      document.getElementById('viewCaseDefendant').innerText = c.defendant || '-';
-      document.getElementById('viewCaseDetails').innerText = c.details || 'لا توجد تفاصيل إضافية مسجلة.';
-      const statusBadge = document.getElementById('viewCaseStatus');
-      statusBadge.innerText = c.status || 'قيد النظر';
-      document.getElementById('viewCaseModal').classList.remove('hidden');
+    window.onload = function() {
+      document.getElementById('welcomeOverlay').classList.remove('hidden');
+      loadData();
     };
-
-    window.editCase = function(index) {
-      const c = cases[index];
-      document.getElementById('caseModalTitle').innerText = 'تعديل بيانات القضية';
-      document.getElementById('editCaseIndex').value = index;
-      document.getElementById('caseTitle').value = c.title || '';
-      document.getElementById('casePlaintiff').value = c.plaintiff || '';
-      document.getElementById('caseDefendant').value = c.defendant || '';
-      document.getElementById('caseStatus').value = c.status || 'قيد النظر';
-      [...document.getElementById('caseVisibleRoles').options].forEach(o=>o.selected=(c.visible_roles||['admin','judge','clerk','guest']).includes(o.value));
-      document.getElementById('caseDetails').value = c.details || '';
-      document.getElementById('caseModal').classList.remove('hidden');
-    };
-
-    window.deleteCase = async function(index) {
-      if(currentUser?.role!=='admin') return alert('حذف القضايا مخصص لرئيس القضاة.');
-      const c=cases[index]; if(!c || !confirm('حذف هذه القضية نهائياً؟')) return;
-      const {error}=await db.from('cases').delete().eq('id',c.id); if(error) return friendlyError(error);
-      await audit('حذف قضية','case',c.id); await loadRemoteData(); renderCases();
-    };
-
-    window.renderWanted = function() {
-      const list=document.getElementById('wantedList'); list.innerHTML='';
-      if(!currentUser || currentUser.role==='guest') { list.innerHTML='<div class="col-span-full text-center py-12 text-gray-500">قائمة المتابعة مخصصة للمستخدمين المصرح لهم.</div>'; return; }
-      if(!wantedList.length) { list.innerHTML='<div class="col-span-full text-center py-12 text-gray-500">لا توجد عناصر في قائمة المتابعة.</div>'; return; }
-      list.innerHTML=wantedList.map((w,i)=>`<div class="bg-navy-800 border border-red-500/20 rounded-xl p-4 space-y-3 relative"><div class="flex justify-between items-start"><span class="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded font-bold">${escapeHtml(w.status||'')}</span>${currentUser.role==='admin'?`<button onclick="deleteWanted(${i})" class="text-red-400 text-xs">حذف</button>`:''}</div><h4 class="font-bold text-gray-100 text-base">${escapeHtml(w.name||'')}</h4><p class="text-xs text-gray-400"><strong class="text-gray-300">السبب:</strong> ${escapeHtml(w.reason||'-')}</p></div>`).join('');
-    };
-
-    window.saveWanted = async function() {
-      if(!['admin','judge'].includes(currentUser?.role)) return alert('إضافة طلبات المتابعة مخصصة لرئيس القضاة والقاضي.');
-      const name=document.getElementById('wantedName').value.trim();
-      const reason=document.getElementById('wantedReason').value.trim();
-      const status=document.getElementById('wantedStatus').value;
-      if(!name) return alert('يرجى إدخال الاسم.');
-      const {error}=await db.from('wanted_items').insert({name,reason,status,visibility:'private',created_by:currentUser.id});
-      if(error) return friendlyError(error); await audit('إضافة طلب متابعة','wanted');
-      document.getElementById('wantedName').value=''; document.getElementById('wantedReason').value=''; closeModal('wantedModal');
-      await loadRemoteData(); renderWanted();
-    };
-
-    window.deleteWanted = async function(index) {
-      if(currentUser?.role!=='admin') return alert('حذف العناصر مخصص لرئيس القضاة.');
-      const w=wantedList[index]; if(!w || !confirm('حذف هذا العنصر؟')) return;
-      const {error}=await db.from('wanted_items').delete().eq('id',w.id); if(error) return friendlyError(error);
-      await loadRemoteData(); renderWanted();
-    };
-
-    window.saveAnnouncement = async function() {
-      if(currentUser?.role!=='admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
-      const body=document.getElementById('announcementInput').value.trim();
-      if(!body) return alert('اكتب نص الإعلان أولاً.');
-      await db.from('announcements').update({is_active:false}).eq('is_active',true);
-      const {error}=await db.from('announcements').insert({body,is_active:true,created_by:currentUser.id});
-      if(error) return friendlyError(error);
-      currentAnnouncement=body; renderAnnouncement(); await audit('نشر إعلان','announcement'); alert('تم نشر الإعلان لجميع الزوار.');
-    };
-
-    window.clearAnnouncement = async function() {
-      if(currentUser?.role!=='admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
-      if(!confirm('هل تريد إزالة الإعلان الحالي؟')) return;
-      await db.from('announcements').update({is_active:false}).eq('is_active',true);
-      currentAnnouncement=''; renderAnnouncement(); await audit('إزالة الإعلان','announcement');
-    };
-
-    window.renderChat = function() {
-      const isAuthorized = currentUser && currentUser.role !== 'guest';
-      const authBox = document.getElementById('chatAuthorizedBox');
-      const blockedBox = document.getElementById('chatVisitorBlocked');
-      if (!isAuthorized) { authBox.classList.add('hidden'); blockedBox.classList.remove('hidden'); return; }
-      authBox.classList.remove('hidden'); blockedBox.classList.add('hidden');
-    };
-
-    window.sendChatMessage = function() { alert('ميزة المحادثة السحابية جاري تجهيز جدولها الخاص.'); };
-
-    window.renderLogs = function() {
-      const list = document.getElementById('logsList');
-      list.innerHTML = '';
-      if (accessLogs.length === 0) { list.innerHTML = `<div class="text-center py-4 text-gray-500">لا يوجد نشاط مسجل حتى الآن.</div>`; return; }
-      accessLogs.forEach(log => {
-        list.innerHTML += `<div class="flex justify-between items-center p-2 bg-navy-900 rounded border border-gray-800"><span class="text-gray-200"><strong>${escapeHtml(log.name)}</strong> (${escapeHtml(log.status)})</span><span class="text-gray-500">${escapeHtml(log.time)}</span></div>`;
-      });
-    };
-
-    window.clearLogs = async function() {
-      if(currentUser?.role!=='admin') return alert('هذه العملية مخصصة لرئيس القضاة.');
-      if(!confirm('مسح سجل العمليات؟')) return;
-      const {error}=await db.from('audit_logs').delete().neq('id',0); if(error) return friendlyError(error);
-      accessLogs=[]; renderLogs();
-    };
-
-    window.onload = window.init;
-  })();
   </script>
 </body>
 </html>
